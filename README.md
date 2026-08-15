@@ -42,6 +42,8 @@ La clé LLM reste **côté serveur** — jamais envoyée au navigateur.
 
 > ⚠️ Le micro (Web Speech API) exige **HTTPS** (ou localhost). Coolify fournit le HTTPS, donc OK en prod.
 
+> ⚠️ **Image GHCR** : la CI (`.github/workflows/docker-publish.yml`) publie sur `ghcr.io/<owner>/<repo>:latest`, où `<repo>` suit le nom **actuel** du repo GitHub. Si tu renommes le repo un jour, GitHub redirige les pushs vers la nouvelle URL (aucune erreur visible), mais l'image publiée change de nom aussi — pense à mettre à jour le champ **Docker Image** dans Coolify, sinon il continue de repull silencieusement l'ancienne image, jamais reconstruite. Vérifier avec `curl -sI <url>/avatar.glb` (ou tout fichier récemment modifié) que `Content-Length`/`Last-Modified` correspondent bien au dernier commit.
+
 ## Tester en local (Docker)
 ```bash
 cp .env.example .env   # mettre ta clé
