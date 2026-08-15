@@ -323,7 +323,7 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "8mb" }));
 app.use((req, res, next) => {
-  if (req.path === "/" || req.path.endsWith(".html")) {
+  if (req.path === "/" || req.path.endsWith(".html") || req.path === "/avatar.glb") {
     res.setHeader("Cache-Control", "no-store");
   }
   next();
