@@ -16,12 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from viseme_poses import VISEMES, ALL_POSED_BONES  # noqa: E402
 
 # extra idle morphs (same bones idle_motion.py drives)
-LID_UP = ["lid.T.L", "lid.T.L.001", "lid.T.R", "lid.T.R.001"]
-LID_LO = ["lid.B.L", "lid.B.L.001", "lid.B.R", "lid.B.R.001"]
 BROW = ["brow.T.L", "brow.T.L.001", "brow.B.L", "brow.T.R", "brow.T.R.001", "brow.B.R"]
 
 IDLE_MORPHS = {
-    "blink": {**{b: (0, 0, -0.032) for b in LID_UP}, **{b: (0, 0, 0.015) for b in LID_LO}},
     "browUp": {b: (0, 0, 0.010) for b in BROW},
     "browFurrow": {"brow.T.L": (-0.004, 0, -0.007), "brow.T.R": (0.004, 0, -0.007),
                    "brow.T.L.001": (-0.003, 0, -0.005), "brow.T.R.001": (0.003, 0, -0.005)},

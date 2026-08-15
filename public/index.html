@@ -220,8 +220,7 @@ function speak(audioSrc, newCues, text){
   };
 }
 
-// ---- idle (blink + occasional brow) ----
-let nextBlink = performance.now()/1000 + 1.5, blinkT = -1;
+// ---- idle (occasional brow) ----
 let nextBrow = performance.now()/1000 + 3, browT = -1, browVal = 0;
 function idle(now, dt){
   if(!face) return;
@@ -231,11 +230,6 @@ function idle(now, dt){
     avatarRoot.rotation.y = baseRot.y + Math.sin(now*0.55) * talk * 1.4;
     avatarRoot.rotation.z = baseRot.z + Math.sin(now*0.7 + 1.2) * talk * 0.45;
   }
-  // blink
-  if(blinkT<0 && now>nextBlink){ blinkT=0; nextBlink=now+2.5+Math.random()*3; }
-  let blink=0;
-  if(blinkT>=0){ blinkT+=dt; const p=blinkT/0.16; blink = p<1 ? Math.sin(p*Math.PI) : (blinkT=-1,0); }
-  setMorph('blink', blink);
   // brow
   if(browT<0 && now>nextBrow){ browT=0; browVal=0.5+Math.random()*0.5; nextBrow=now+4+Math.random()*5; }
   let brow=0;

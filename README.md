@@ -13,7 +13,7 @@ Le **rendu 3D tourne dans le navigateur du visiteur** (aucune charge GPU serveur
 web/
   public/            front three.js (servi statiquement)
     index.html       viewer + lipsync + micro (Web Speech API)
-    avatar.glb       mesh + 11 morph targets (visèmes A–H + blink/browUp/browFurrow)
+    avatar.glb       mesh + 10 morph targets (visèmes A–H + browUp/browFurrow)
     vendor/          three.js (local, pas de CDN)
   server.js          Express : /api/say, /api/chat
   Dockerfile         Node + Piper (voix FR) + Rhubarb
@@ -59,7 +59,7 @@ blender --background ../antifa_bust_rigged_weight2_fixed.blend \
 ## Notes
 - STT = **Web Speech API** (navigateur, gratuit) — Chrome/Edge le supportent bien en `fr-FR`.
 - TTS = **Piper** voix `fr_FR-siwis-medium` (changeable dans le Dockerfile / `PIPER_VOICE`).
-- Idle (clignements, sourcils) piloté en JS côté front via les morphs `blink`/`browUp`.
+- Idle (sourcils) piloté en JS côté front via le morph `browUp`.
 
 ## Licence
 [MIT](LICENSE) © 2026 Paul Woisard
