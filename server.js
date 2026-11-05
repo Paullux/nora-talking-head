@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
+import { retrieve, formatContext } from "./rag/retrieve.js";
 
 const execFileP = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,8 +29,19 @@ const {
   LLM_MODEL = "mistral-small-latest",
   LLM_VISION_MODEL = "",
   LLM_MAX_TOKENS = "220",
-  SYSTEM_PROMPT = "Tu t'appelles Nora, une assistante incarnée dans un avatar 3D. Tu es vive, chaleureuse et un peu taquine. Tu réponds en français, à l'oral, en 1 à 3 phrases courtes et naturelles. Pas de listes, pas de markdown, pas d'emojis.",
+  SYSTEM_PROMPT = "Tu t'appelles Nora, une assistante incarnée dans un avatar 3D, passionnée de contre-cultures (skinheads, punk, antifascisme). Tu es vive, chaleureuse et un peu taquine. Tu réponds en français, à l'oral, en 1 à 3 phrases courtes et naturelles. Pas de listes, pas de markdown, pas d'emojis. Règle absolue, même sans extraits fournis ce tour-ci : n'invente jamais un fait précis (nom, date, chiffre, citation) sur les contre-cultures, et ne cite jamais une source que tu n'as pas reçue dans ce tour (jamais Wikipédia, tu n'y as pas accès). Si tu n'es pas sûre, dis-le simplement plutôt que d'inventer. Distingue toujours ce que tu sors de tes documents (et dis lesquels) de ce qui est ton interprétation ou ton avis à toi.",
   DIAG_PASSWORD = "",
+  // RAG (scope "public" uniquement — cf. rag/README.md). OLLAMA_URL vide =
+  // RAG désactivé sans erreur (retrieve() renvoie []). En prod, OLLAMA_URL
+  // pointe sur le tunnel HTTPS (Nginx Proxy Manager) vers l'Ollama du LAN
+  // perso, protégé par Basic Auth (OLLAMA_AUTH_USER/PASS) — jamais l'IP LAN
+  // directe, inaccessible depuis le VPS.
+  OLLAMA_URL = "",
+  OLLAMA_AUTH_USER = "",
+  OLLAMA_AUTH_PASS = "",
+  RAG_EMBED_MODEL = "nomic-embed-text",
+  RAG_TOP_K = "3",
+  RAG_MIN_SCORE = "0.35",
 } = process.env;
 const VISION_MODEL = LLM_VISION_MODEL || LLM_MODEL;
 
@@ -128,6 +140,59 @@ async function say(text, id = shortId()) {
   }
 }
 
+// ---- RAG trigger -----------------------------------------------------
+// Le score cosinus seul ne sépare pas sujet/hors-sujet pour ce modèle
+// d'embedding sur ce corpus (vérifié : "tarte aux pommes" score plus haut
+// que "mouvement SHARP"). Au lieu d'un seuil, on demande au modèle de
+// chat lui-même — vite, peu de tokens — si CE message appelle la base
+// documentaire : soit il porte sur le sujet, soit il poursuit un fil déjà
+// engagé (d'où l'historique passé en contexte). Un simple "bonjour" répond
+// NON et on n'interroge même pas le RAG.
+const RAG_TRIGGER_PROMPT = `Tu réponds UNIQUEMENT par un mot : OUI ou NON.
+Réponds OUI si le dernier message de l'utilisateur porte sur les contre-cultures (skinheads, punk, antifascisme, reggae, Rock Against Racism, etc.), ou pose une question qui poursuit un sujet de ce type déjà engagé dans la conversation.
+Réponds NON pour une salutation, un remerciement, une formule de politesse ou d'au revoir, du small talk, ou tout autre sujet — même si la conversation portait sur les contre-cultures juste avant.
+
+Exemples :
+"Bonjour !" -> NON
+"Ca va toi ?" -> NON
+"Tu connais le mouvement SHARP ?" -> OUI
+"Et ca a pris en France aussi ?" (après avoir parlé de SHARP) -> OUI
+"Ok merci, bonne soirée" -> NON
+"Quelle est la meilleure recette de tarte aux pommes ?" -> NON`;
+
+async function shouldSearchRag(userText, history, id) {
+  try {
+    const recentHistory = history.slice(-6);
+    const res = await fetch(`${LLM_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${LLM_API_KEY}` },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        max_tokens: 3,
+        temperature: 0,
+        messages: [
+          { role: "system", content: RAG_TRIGGER_PROMPT },
+          ...recentHistory,
+          { role: "user", content: userText },
+        ],
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`trigger ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || "";
+    logStep(id, "rag:trigger:ok", `raw="${raw.trim()}"`);
+    return raw.trim().toUpperCase().startsWith("OUI");
+  } catch (err) {
+    // Panne/timeout != décision "NON" du modèle — distingué dans les logs
+    // pour ne pas confondre un vrai NON avec un échec technique.
+    const msg = String(err.message || err);
+    const isTimeout = err.name === "TimeoutError" || /abort|timeout/i.test(msg);
+    logStep(id, isTimeout ? "rag:trigger:timeout" : "rag:trigger:error", msg);
+    return false; // en cas de doute/panne, pas de RAG plutôt qu'un faux positif intrusif
+  }
+}
+
 // ---- external LLM (OpenAI-compatible chat/completions) -------------------
 async function chat(userText, history = [], id = shortId()) {
   if (!LLM_API_KEY.trim()) {
@@ -135,8 +200,27 @@ async function chat(userText, history = [], id = shortId()) {
   }
   const t0 = Date.now();
   logStep(id, "llm:start", `model=${LLM_MODEL} base=${LLM_API_BASE}`);
+  let ragContext = "";
+  if (OLLAMA_URL) {
+    const wantsRag = await shouldSearchRag(userText, history, id);
+    logStep(id, "rag:trigger", wantsRag ? "oui" : "non");
+    if (wantsRag) {
+      const hits = await retrieve(userText, {
+        ollamaUrl: OLLAMA_URL,
+        embedModel: RAG_EMBED_MODEL,
+        authUser: OLLAMA_AUTH_USER,
+        authPass: OLLAMA_AUTH_PASS,
+        topK: Number(RAG_TOP_K),
+        minScore: Number(RAG_MIN_SCORE),
+        history,
+      });
+      logStep(id, "rag:hits", `n=${hits.length} ${hits.map(h => h.id).join(", ")}`);
+      ragContext = formatContext(hits);
+    }
+  }
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
+    ...(ragContext ? [{ role: "system", content: ragContext }] : []),
     ...history,
     { role: "user", content: userText },
   ];

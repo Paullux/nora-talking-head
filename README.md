@@ -16,6 +16,7 @@ web/
     avatar.glb       mesh + 10 morph targets (visèmes A–H + browUp/browFurrow)
     vendor/          three.js (local, pas de CDN)
   server.js          Express : /api/say, /api/chat
+  rag/               RAG scope "public" (recherche-documentaire) — cf. rag/README.md
   Dockerfile         Node + Piper (voix FR) + Rhubarb
   docker-compose.yml
   .env.example       config (clé LLM, personnalité…)

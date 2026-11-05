@@ -36,6 +36,10 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY server.js ./
 COPY public ./public
+# rag/index.json (baked embeddings) ships with the image; build_index.py
+# itself is excluded by .dockerignore (*.py) — it needs NAS access the
+# container doesn't have, and only runs at index-build time, not runtime.
+COPY rag ./rag
 
 ENV PORT=3000 \
     PIPER_BIN=/opt/piper/piper \
