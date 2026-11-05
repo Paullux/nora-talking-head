@@ -435,10 +435,14 @@ app.use(express.static(join(__dirname, "public")));
 
 // ---- rate limits (per client IP) -----------------------------------------
 // heavy = Piper + Rhubarb (/api/say, /api/chat); light = LLM only.
-const heavyBurst = rateLimit({ windowMs: 30_000, max: 3, standardHeaders: true, legacyHeaders: false });
-const heavySustained = rateLimit({ windowMs: 5 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
-const lightBurst = rateLimit({ windowMs: 30_000, max: 6, standardHeaders: true, legacyHeaders: false });
-const lightSustained = rateLimit({ windowMs: 5 * 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+// express-rate-limit's default 429 body is plain text, not JSON -- the
+// front-end's postJson() always tries to JSON.parse() the response, so a
+// default-message 429 surfaces as a confusing "réponse non-JSON" error
+// instead of the readable message below.
+const heavyBurst = rateLimit({ windowMs: 30_000, max: 3, standardHeaders: true, legacyHeaders: false, message: { error: "Nora est occupée, réessaie dans un instant." } });
+const heavySustained = rateLimit({ windowMs: 5 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: "Trop de messages, réessaie dans quelques minutes." } });
+const lightBurst = rateLimit({ windowMs: 30_000, max: 6, standardHeaders: true, legacyHeaders: false, message: { error: "Trop de requêtes, réessaie dans un instant." } });
+const lightSustained = rateLimit({ windowMs: 5 * 60_000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Trop de requêtes, réessaie dans quelques minutes." } });
 
 // concurrency guard: reject immediately rather than queue (predictable UX)
 function concurrencyGuard(req, res, next) {
