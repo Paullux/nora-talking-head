@@ -91,6 +91,15 @@ function logStep(id, step, extra = "") {
   console.log(`[${id}] ${step}${extra ? ` ${extra}` : ""}`);
 }
 
+// fetch() throws a generic "fetch failed" TypeError for any network-level
+// failure (DNS, connection refused, TLS...); the actual reason lives on
+// err.cause and is silently lost if you only read err.message.
+function errorDetail(e) {
+  const cause = e?.cause ? (e.cause.code || e.cause.message || String(e.cause)) : null;
+  const msg = String(e?.message || e);
+  return cause && !msg.includes(cause) ? `${msg}: ${cause}` : msg;
+}
+
 function spawnWithInput(file, args, input, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { stdio: ["pipe", "pipe", "pipe"] });
@@ -521,8 +530,8 @@ app.post("/api/say", heavyBurst, heavySustained, concurrencyGuard, async (req, r
     logStep(id, "api:say");
     res.json(await say(String(req.body.text || "").slice(0, 800), id));
   } catch (e) {
-    logStep(id, "api:say:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:say:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
@@ -533,8 +542,8 @@ app.post("/api/chat-text", lightBurst, lightSustained, async (req, res) => {
     const reply = await chat(String(req.body.text || "").slice(0, 1000), req.body.history || [], id);
     res.json({ reply });
   } catch (e) {
-    logStep(id, "api:chat-text:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:chat-text:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
@@ -549,8 +558,8 @@ app.post("/api/compact", lightBurst, lightSustained, async (req, res) => {
     );
     res.json({ summary });
   } catch (e) {
-    logStep(id, "api:compact:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:compact:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
@@ -565,8 +574,8 @@ app.post("/api/analyze-image", lightBurst, lightSustained, async (req, res) => {
     }, id);
     res.json({ reply });
   } catch (e) {
-    logStep(id, "api:analyze-image:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:analyze-image:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
@@ -581,8 +590,8 @@ app.post("/api/analyze-link", lightBurst, lightSustained, async (req, res) => {
     }, id);
     res.json({ reply });
   } catch (e) {
-    logStep(id, "api:analyze-link:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:analyze-link:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
@@ -594,8 +603,8 @@ app.post("/api/chat", heavyBurst, heavySustained, concurrencyGuard, async (req, 
     const voice = await say(reply, id);
     res.json({ reply, ...voice });
   } catch (e) {
-    logStep(id, "api:chat:error", String(e.message || e));
-    res.status(500).json({ error: String(e.message || e) });
+    logStep(id, "api:chat:error", errorDetail(e));
+    res.status(500).json({ error: errorDetail(e) });
   }
 });
 
