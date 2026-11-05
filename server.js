@@ -26,6 +26,8 @@ const {
   RHUBARB_RECOGNIZER = "phonetic",
   LLM_API_BASE = "https://api.mistral.ai/v1",
   LLM_API_KEY = "",
+  LLM_AUTH_USER = "",
+  LLM_AUTH_PASS = "",
   LLM_MODEL = "mistral-small-latest",
   LLM_VISION_MODEL = "",
   LLM_MAX_TOKENS = "220",
@@ -44,6 +46,21 @@ const {
   RAG_MIN_SCORE = "0.35",
 } = process.env;
 const VISION_MODEL = LLM_VISION_MODEL || LLM_MODEL;
+
+// LLM_API_KEY (Bearer) covers Mistral/OpenAI-style providers; LLM_AUTH_USER
+// (Basic) covers a self-hosted endpoint sitting behind reverse-proxy auth
+// (e.g. Ollama via Nginx Proxy Manager, same pattern as OLLAMA_AUTH_USER
+// below for the RAG embeddings call). Neither set = no auth header, for a
+// direct unauthenticated local Ollama.
+function llmHeaders() {
+  const headers = { "content-type": "application/json" };
+  if (LLM_API_KEY.trim()) {
+    headers.authorization = `Bearer ${LLM_API_KEY}`;
+  } else if (LLM_AUTH_USER) {
+    headers.authorization = `Basic ${Buffer.from(`${LLM_AUTH_USER}:${LLM_AUTH_PASS}`).toString("base64")}`;
+  }
+  return headers;
+}
 
 // max simultaneous Piper/Rhubarb pipelines — this VPS has 1 vCPU, so
 // running several at once degrades everyone instead of queuing fairly.
@@ -165,7 +182,7 @@ async function shouldSearchRag(userText, history, id) {
     const recentHistory = history.slice(-6);
     const res = await fetch(`${LLM_API_BASE}/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${LLM_API_KEY}` },
+      headers: llmHeaders(),
       body: JSON.stringify({
         model: LLM_MODEL,
         max_tokens: 3,
@@ -195,9 +212,6 @@ async function shouldSearchRag(userText, history, id) {
 
 // ---- external LLM (OpenAI-compatible chat/completions) -------------------
 async function chat(userText, history = [], id = shortId()) {
-  if (!LLM_API_KEY.trim()) {
-    throw new Error("LLM_API_KEY manquante cote serveur");
-  }
   const t0 = Date.now();
   logStep(id, "llm:start", `model=${LLM_MODEL} base=${LLM_API_BASE}`);
   let ragContext = "";
@@ -226,7 +240,7 @@ async function chat(userText, history = [], id = shortId()) {
   ];
   const res = await fetch(`${LLM_API_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${LLM_API_KEY}` },
+    headers: llmHeaders(),
     body: JSON.stringify({ model: LLM_MODEL, messages, max_tokens: Number(LLM_MAX_TOKENS), temperature: 0.8 }),
   });
   if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text()}`);
@@ -237,14 +251,11 @@ async function chat(userText, history = [], id = shortId()) {
 }
 
 async function compactMemory(summary = "", history = [], id = shortId()) {
-  if (!LLM_API_KEY.trim()) {
-    throw new Error("LLM_API_KEY manquante cote serveur");
-  }
   const t0 = Date.now();
   logStep(id, "compact:start", `turns=${history.length}`);
   const res = await fetch(`${LLM_API_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${LLM_API_KEY}` },
+    headers: llmHeaders(),
     body: JSON.stringify({
       model: LLM_MODEL,
       max_tokens: 180,
@@ -315,9 +326,6 @@ function looksLikeImageUrl(url) {
 }
 
 async function analyzeImage({ imageUrl, prompt = "", history = [] }, id = shortId()) {
-  if (!LLM_API_KEY.trim()) {
-    throw new Error("LLM_API_KEY manquante cote serveur");
-  }
   const t0 = Date.now();
   const safePrompt = String(prompt || "").slice(0, 700) || "Analyse cette image en français.";
   logStep(id, "vision:start", `model=${VISION_MODEL}`);
@@ -334,7 +342,7 @@ async function analyzeImage({ imageUrl, prompt = "", history = [] }, id = shortI
   ];
   const res = await fetch(`${LLM_API_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${LLM_API_KEY}` },
+    headers: llmHeaders(),
     body: JSON.stringify({ model: VISION_MODEL, messages, max_tokens: Number(LLM_MAX_TOKENS), temperature: 0.6 }),
   });
   if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text()}`);
@@ -461,7 +469,8 @@ app.get("/api/health", (_req, res) => res.json({
   ok: true,
   version: "social-assets-2026-07-13",
   llm: {
-    configured: Boolean(LLM_API_KEY.trim()),
+    configured: Boolean(LLM_API_BASE.trim()),
+    auth: LLM_API_KEY.trim() ? "bearer" : LLM_AUTH_USER ? "basic" : "none",
     apiBase: LLM_API_BASE,
     model: LLM_MODEL,
   },
